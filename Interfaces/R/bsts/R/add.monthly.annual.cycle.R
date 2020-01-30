@@ -65,6 +65,9 @@ AddMonthlyAnnualCycle <- function(state.specification,
   if (is.null(date.of.first.observation)) {
     if (is.zoo(y)) {
       dates <- index(y)
+      if (dates[1] == 1) {
+        warning("The index of y may be specified as an integer without an origin date.")
+      }
       date.of.first.observation <- as.Date(dates[1])
     }
   }
@@ -72,6 +75,45 @@ AddMonthlyAnnualCycle <- function(state.specification,
             length(date.of.first.observation) == 1)
   date.of.first.observation <- as.POSIXlt(date.of.first.observation)
 
+  ## Test to ensure that y includes a full month of data, as well as at least
+  ## one day before and after that month
+  if (is.zoo(y) && length(y) < 63) {
+    meets_requirement <- FALSE
+    observated_dates <- as.Date(index(y))
+    surrounding_dates <- as.POSIXlt(
+      seq.Date(
+        from = as.Date(ISOdate(
+          date.of.first.observation$year + 1900, date.of.first.observation$mon + 1, 1)),
+        by = 1, 
+        length.out = length(y) + 31
+      )
+    )
+    
+    dates <- data.frame(
+      date = surrounding_dates,
+      year = sapply(surrounding_dates, function(dt) dt$year),
+      month = sapply(surrounding_dates, function(dt) dt$mon),
+      day = sapply(surrounding_dates, function(dt) dt$mday),
+      obs = sapply(surrounding_dates, function(dt) as.Date(dt) %in% observated_dates)
+    )
+    for (yr in unique(dates$year)) {
+      df_yr <- dates[which(dates$year == yr), ]
+      for (mon in unique(df_yr$mon)) {
+        df_yr_mon <- df_yr[which(df_yr$mon == mon), ]
+        if (
+          nrow(df_yr_mon) == sum(df_yr_mon$obs) &&
+          (as.Date(ISOdate(1900 + yr, 1 + mon, 1)) - 1) %in% observated_dates &&
+          (as.Date(ISOdate(1900 + yr, 1 + mon, max(df_yr_mon$day))) + 1) %in% observated_dates
+        ) {
+          meets_requirement <- TRUE
+          break()
+        }
+      }
+    }
+    
+    if (!meets_requirement) stop("Monthly annual cycle component requires at least a full calendar month of observations, as well as one day before and after.")
+  }
+  
   monthly <- list(
       name = "Monthly",
       sigma.prior = sigma.prior,
